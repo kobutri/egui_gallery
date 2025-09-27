@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, author, width, height, hash, path, mime_type FROM images LIMIT ? OFFSET ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "author",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "width",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "height",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "hash",
+        "ordinal": 4,
+        "type_info": "Blob"
+      },
+      {
+        "name": "path",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "mime_type",
+        "ordinal": 6,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e1670f7718bb439b72ab33b1fa137cc393fec746f0fd3823f4f78d298b617d28"
+}
