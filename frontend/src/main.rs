@@ -1,13 +1,13 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use eframe::App;
-use egui::epaint::RectShape;
-use egui::load::TexturePoll;
-use egui::{Color32, CornerRadius, Image, Pos2, Sense, Vec2, Widget, mutex::RwLock};
+use egui::{Image, Pos2, Vec2, mutex::RwLock};
+use egui::{OpenUrl, Rect, Sense};
 use egui_taffy::{
     TuiBuilderLogic, tid, tui,
     virtual_tui::{VirtualGridRowHelper, VirtualGridRowHelperParams},
 };
+use egui_thumbhash::ThumbhashImage;
 use shared::ImageResponse;
 use taffy::{
     prelude::{auto, flex, length, percent, span},
@@ -108,86 +108,6 @@ impl Gallery {
     }
 }
 
-struct CoverImage<'a> {
-    source: Cow<'a, str>,
-    size: Vec2,
-}
-
-impl<'a> CoverImage<'a> {
-    fn new(source: impl Into<Cow<'a, str>>, size: Vec2) -> Self {
-        Self {
-            source: source.into(),
-            size,
-        }
-    }
-}
-
-impl Widget for CoverImage<'_> {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let mut size = self.size;
-        if !size.x.is_finite() {
-            size.x = ui.available_width();
-        }
-        if !size.y.is_finite() {
-            size.y = ui.available_height();
-        }
-        size.x = size.x.max(1.0);
-        size.y = size.y.max(1.0);
-        let rounding = CornerRadius::ZERO;
-
-        let image = Image::new(self.source.as_ref()).maintain_aspect_ratio(true);
-        let load_result = image.load_for_size(ui.ctx(), size);
-
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-
-        if !ui.is_rect_visible(rect) {
-            return response;
-        }
-
-        match load_result {
-            Ok(TexturePoll::Ready { texture, .. }) => {
-                let tex_size = Vec2::new(texture.size[0] as f32, texture.size[1] as f32);
-                if tex_size.x > 0.0 && tex_size.y > 0.0 {
-                    let mut uv_min = Pos2::new(0.0, 0.0);
-                    let mut uv_max = Pos2::new(1.0, 1.0);
-
-                    let tex_ratio = tex_size.x / tex_size.y;
-                    let target_ratio = size.x / size.y;
-
-                    if target_ratio > tex_ratio {
-                        // Target is wider -> crop vertically
-                        let scale = target_ratio / tex_ratio;
-                        let visible = 1.0 / scale;
-                        let offset = (1.0 - visible) / 2.0;
-                        uv_min.y = offset;
-                        uv_max.y = 1.0 - offset;
-                    } else {
-                        // Target is taller -> crop horizontally
-                        let scale = tex_ratio / target_ratio;
-                        let visible = 1.0 / scale;
-                        let offset = (1.0 - visible) / 2.0;
-                        uv_min.x = offset;
-                        uv_max.x = 1.0 - offset;
-                    }
-
-                    let shape = RectShape::filled(rect, rounding, Color32::WHITE)
-                        .with_texture(texture.id, egui::Rect::from_min_max(uv_min, uv_max));
-                    ui.painter().add(shape);
-                } else {
-                    ui.painter()
-                        .rect_filled(rect, rounding, Color32::from_gray(30));
-                }
-            }
-            _ => {
-                ui.painter()
-                    .rect_filled(rect, rounding, Color32::from_gray(30));
-            }
-        }
-
-        response
-    }
-}
-
 impl App for Gallery {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let state = self.state.read();
@@ -206,6 +126,10 @@ impl App for Gallery {
                     ..Default::default()
                 })
                 .show(|tui| {
+                    if state.images.is_empty() && state.loading {
+                        tui.ui(|ui| ui.spinner());
+                        return;
+                    }
                     tui.style(taffy::Style {
                         display: taffy::Display::Grid,
                         overflow: taffy::Point {
@@ -218,7 +142,7 @@ impl App for Gallery {
                             height: auto(),
                         },
                         max_size: percent(1.),
-                        grid_auto_rows: vec![length(300.)],
+                        grid_auto_rows: vec![auto()],
                         ..Default::default()
                     })
                     .add(|tui| {
@@ -226,7 +150,7 @@ impl App for Gallery {
                         VirtualGridRowHelper::show(
                             VirtualGridRowHelperParams {
                                 header_row_count: 1,
-                                row_count: row_count,
+                                row_count,
                             },
                             tui,
                             |tui, info| {
@@ -246,21 +170,32 @@ impl App for Gallery {
                                         .mut_style(&mut_grid_row_param)
                                         .mut_style(|style| {
                                             style.padding = length(2.);
-                                            style.size.width = percent(100.0);
-                                            style.size.height = length(300.0);
+                                            style.aspect_ratio = Some(1.0);
                                         })
                                         .ui(|ui| {
-                                            let mut size = ui.available_size();
-                                            if !size.y.is_finite() || size.y <= 0.0 {
-                                                size.y = 300.0;
-                                            } else {
-                                                size.y = 300.0;
-                                            }
                                             let url = format!(
                                                 "http://localhost:3000/{}",
                                                 image_response.path
                                             );
-                                            ui.add(CoverImage::new(url, size));
+
+                                            let image = Image::new(&url)
+                                                .shrink_to_fit()
+                                                .maintain_aspect_ratio(false)
+                                                .uv(calc_cover_uv(
+                                                    ui.available_size(),
+                                                    Vec2::new(
+                                                        image_response.width as f32,
+                                                        image_response.height as f32,
+                                                    ),
+                                                ))
+                                                .sense(Sense::click());
+
+                                            if ThumbhashImage::new(image, &image_response.hash)
+                                                .ui(ui)
+                                                .clicked()
+                                            {
+                                                ctx.open_url(OpenUrl { url, new_tab: true });
+                                            }
                                         });
                                 }
                             },
@@ -272,6 +207,7 @@ impl App for Gallery {
                                 grid_row: style_helpers::line(1),
                                 padding: length(4.),
                                 align_items: Some(taffy::AlignItems::Center),
+
                                 grid_column: span(2),
                                 ..Default::default()
                             })
@@ -281,4 +217,24 @@ impl App for Gallery {
                 });
         });
     }
+}
+
+fn calc_cover_uv(available_size: Vec2, image_source_size: Vec2) -> Rect {
+    let mut min = Pos2::ZERO;
+    let mut max = Pos2::new(1.0, 1.0);
+
+    let image_source_aspect = image_source_size.x / image_source_size.y;
+    let available_aspect = available_size.x / available_size.y;
+
+    if available_aspect >= image_source_aspect {
+        let height_ratio = image_source_aspect / available_aspect;
+        min.y = (1.0 - height_ratio) / 2.0;
+        max.y = height_ratio / 2.0 + 0.5;
+    } else {
+        let width_ratio = available_aspect / image_source_aspect;
+        min.x = (1.0 - width_ratio) / 2.0;
+        max.x = width_ratio / 2.0 + 0.5;
+    }
+
+    Rect { min, max }
 }

@@ -10,5 +10,6 @@ pub struct ImageResponse {
     #[serde(deserialize_with = "hex::serde::deserialize")]
     pub hash: Vec<u8>,
     pub path: String,
+    pub url: String,
     pub mime_type: String,
 }

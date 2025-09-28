@@ -7,5 +7,6 @@ CREATE TABLE IF NOT EXISTS images (
     height INTEGER NOT NULL,
     hash BLOB NOT NULL,
     path VARCHAR(255) NOT NULL,
+    url VARCHAR(512) NOT NULL,
     mime_type VARCHAR(255) NOT NULL
 )

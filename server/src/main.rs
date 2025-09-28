@@ -88,7 +88,7 @@ async fn get_images(
     let offset = (params.page.unwrap_or(0) as i64) * limit;
 
     let images = sqlx::query!(
-        "SELECT id, author, width, height, hash, path, mime_type FROM images LIMIT ? OFFSET ?",
+        "SELECT id, author, width, height, hash, path, url, mime_type FROM images LIMIT ? OFFSET ?",
         limit,
         offset
     )
@@ -105,6 +105,7 @@ async fn get_images(
             height: row.height as i32,
             hash: row.hash,
             path: row.path,
+            url: row.url,
             mime_type: row.mime_type,
         })
         .collect();
@@ -135,11 +136,12 @@ async fn fetch_and_insert_images(
                 let h = image.height as i32;
                 // Insert image into database
                 let result = sqlx::query!(
-                    r#"INSERT INTO images (author, width, height, hash, path, mime_type) VALUES (?, ?, ?, ?, ?, ?)"#,
+                    r#"INSERT INTO images (author, width, height, hash, path, url, mime_type) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
                     "Picsum Photos",
                     w,h,
                     image.hash,
                     image.path,
+                    image.url,
                     image.mime_type
                 )
                 .execute(&state.db)
@@ -155,6 +157,7 @@ async fn fetch_and_insert_images(
                             height: image.height as i32,
                             hash: image.hash,
                             path: image.path.clone(),
+                            url: image.url,
                             mime_type: image.mime_type,
                         });
                     }
@@ -175,6 +178,7 @@ async fn fetch_and_insert_images(
 #[derive(Deserialize)]
 struct PicsumImage {
     download_url: String,
+    url: String,
 }
 
 async fn fetch_images(
@@ -191,14 +195,14 @@ async fn fetch_images(
 
     let semaphore = Arc::new(Semaphore::new(5));
 
-    let images = images.into_iter().map(async |image| {
+    let images = images.into_iter().map(async |picsum_image| {
         let semaphore = semaphore.clone();
         let filename = generate_random_filename();
         let path = path.join(&filename);
         tokio::spawn(async move {
             let lock = semaphore.acquire().await?;
 
-            let reader = reqwest::get(image.download_url)
+            let reader = reqwest::get(picsum_image.download_url)
                 .await?
                 .bytes_stream()
                 .map_err(std::io::Error::other);
@@ -238,6 +242,7 @@ async fn fetch_images(
                         height,
                         hash,
                         path: format!("images/{filename}.{}", format.extensions_str()[0]),
+                        url: picsum_image.url,
                         mime_type,
                     },
                     format,
@@ -249,9 +254,8 @@ async fn fetch_images(
             drop(lock);
 
             let (image, format) = handle.await??;
-            let new_path = path.with_extension(format.extensions_str()[0]);
 
-            tokio::fs::rename(path, new_path).await?;
+            tokio::fs::rename(&path, path.with_extension(format.extensions_str()[0])).await?;
 
             Ok(image)
         })
@@ -266,6 +270,7 @@ struct Image {
     height: u32,
     hash: Vec<u8>,
     path: String,
+    url: String,
     mime_type: String,
 }
 
