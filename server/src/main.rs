@@ -1,7 +1,6 @@
 use std::{
     io::{self, BufRead, Read, Seek},
     path::Path,
-    str::FromStr,
     sync::{Arc, mpsc},
 };
 
@@ -11,13 +10,16 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::Json,
-    routing::{any, get, post},
+    routing::{any, get},
 };
 use futures_util::{TryStreamExt, future::join_all};
 use image::ImageReader;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use shared::ImageResponse;
-use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
+use sqlx::{
+    SqlitePool,
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+};
 use tokio::{fs::File, io::BufWriter, sync::Semaphore};
 use tokio_util::io::{InspectReader, StreamReader};
 use tower_http::services::ServeDir;
@@ -37,19 +39,23 @@ pub struct FetchImagesQuery {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize database
-    let pool = SqlitePool::connect_with(
-        SqliteConnectOptions::from_str("sqlite::memory")?.create_if_missing(true),
-    )
-    .await?;
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .idle_timeout(None)
+        .max_lifetime(None)
+        .connect_with(
+            SqliteConnectOptions::new()
+                .in_memory(true)
+                .shared_cache(true),
+        )
+        .await?;
     sqlx::migrate!().run(&pool).await?;
 
     // Set up data directory
     let Some(dir) = directories::ProjectDirs::from("com", "kobutri", "egui_gallery_backend") else {
         bail!("did not find directories");
     };
-    let Some(data_dir) = dir.state_dir() else {
-        bail!("did no find state dir");
-    };
+    let data_dir = dir.data_local_dir();
     std::fs::create_dir_all(data_dir)?;
 
     let images_dir = data_dir.join("images");

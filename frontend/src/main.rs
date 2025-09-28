@@ -77,7 +77,7 @@ impl State {
                     return;
                 }
             };
-            println!("fteched {} images", images.len());
+            println!("fetched {} images", images.len());
             {
                 let mut state = state.write();
                 state.images.extend(images);
@@ -146,7 +146,7 @@ impl App for Gallery {
                         ..Default::default()
                     })
                     .add(|tui| {
-                        let row_count = state.images.len() / 2;
+                        let row_count = (state.images.len() / 2).max((state.images.len()+1) / 2);
                         VirtualGridRowHelper::show(
                             VirtualGridRowHelperParams {
                                 header_row_count: 1,
@@ -194,7 +194,7 @@ impl App for Gallery {
                                                 .ui(ui)
                                                 .clicked()
                                             {
-                                                ctx.open_url(OpenUrl { url, new_tab: true });
+                                                ctx.open_url(OpenUrl { url: image_response.url.clone(), new_tab: true });
                                             }
                                         });
                                 }

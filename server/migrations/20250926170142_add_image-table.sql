@@ -1,6 +1,6 @@
 -- Add migration script here
 
-CREATE TABLE IF NOT EXISTS images (
+CREATE TABLE images (
     id INTEGER PRIMARY KEY NOT NULL,
     author VARCHAR(255) NOT NULL,
     width INTEGER NOT NULL,
