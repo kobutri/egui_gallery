@@ -1,0 +1,17 @@
+[package]
+name = "frontend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+eframe = { version = "0.32.3" }
+egui = "0.32.3"
+egui_extras = { version = "0.32.3", features = ["all_loaders"] }
+egui_taffy = "0.9.0"
+egui_thumbhash = "0.8.0"
+hex = "0.4.3"
+reqwest = { version = "0.12.23", features = ["json"] }
+shared = { workspace = true }
+taffy = "=0.7.7"
+tokio = { version = "1.47.1", features = ["full"] }

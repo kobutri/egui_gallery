@@ -37,3 +37,4 @@ tokio-util = { version = "0.7.16", features = ["full"] }
 tower = { version = "0.5.2", features = ["full"] }
 tower-http = { version = "0.6.6", features = ["full"] }
 tracing-subscriber = "0.3.20"
+shared = { workspace = true }

@@ -16,25 +16,16 @@ use axum::{
 use futures_util::{TryStreamExt, future::join_all};
 use image::ImageReader;
 use serde::{Deserialize, Serialize};
+use shared::ImageResponse;
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use tokio::{fs::File, io::BufWriter, sync::Semaphore};
 use tokio_util::io::{InspectReader, StreamReader};
+use tower_http::services::ServeDir;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: SqlitePool,
     pub data_dir: std::path::PathBuf,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ImageResponse {
-    pub id: i64,
-    pub author: String,
-    pub width: i32,
-    pub height: i32,
-    pub hash: String,
-    pub path: String,
-    pub mime_type: String,
 }
 
 #[derive(Deserialize)]
@@ -76,6 +67,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/images", get(get_images))
         .route("/images/fetch", any(fetch_and_insert_images))
+        .fallback_service(ServeDir::new(&app_state.data_dir))
         .with_state(app_state);
 
     // Start server
@@ -111,7 +103,7 @@ async fn get_images(
             author: row.author,
             width: row.width as i32,
             height: row.height as i32,
-            hash: hex::encode(row.hash),
+            hash: row.hash,
             path: row.path,
             mime_type: row.mime_type,
         })
@@ -126,9 +118,7 @@ async fn fetch_and_insert_images(
     Query(params): Query<FetchImagesQuery>,
 ) -> Result<Json<Vec<ImageResponse>>, StatusCode> {
     let page = params.page.unwrap_or(0);
-    let limit = params.limit.unwrap_or(10).min(50);
-
-    println!("pag: {page}, limit: {limit}");
+    let limit = params.limit.unwrap_or(10).min(500);
 
     let images_dir = state.data_dir.join("images");
 
@@ -163,7 +153,7 @@ async fn fetch_and_insert_images(
                             author: "Picsum Photos".to_string(),
                             width: image.width as i32,
                             height: image.height as i32,
-                            hash: hex::encode(&image.hash),
+                            hash: image.hash,
                             path: image.path.clone(),
                             mime_type: image.mime_type,
                         });
@@ -219,7 +209,7 @@ async fn fetch_images(
                     eprintln!("{:?}", e);
                 }
             });
-            let file = File::create(path).await?;
+            let file = File::create(path.clone()).await?;
             let mut file = BufWriter::new(file);
 
             let handle = tokio::task::spawn_blocking(move || {
@@ -242,22 +232,28 @@ async fn fetch_images(
                     &thumbnail.to_rgba8(),
                 );
 
-                anyhow::Ok(Image {
-                    width,
-                    height,
-                    hash,
-                    path: format!("images/{filename}"),
-                    mime_type,
-                })
+                anyhow::Ok((
+                    Image {
+                        width,
+                        height,
+                        hash,
+                        path: format!("images/{filename}.{}", format.extensions_str()[0]),
+                        mime_type,
+                    },
+                    format,
+                ))
             });
             tokio::io::copy(&mut reader, &mut file).await?;
 
             let _ = sender.send(vec![]);
             drop(lock);
 
-            let ret = handle.await;
+            let (image, format) = handle.await??;
+            let new_path = path.with_extension(format.extensions_str()[0]);
 
-            ret?
+            tokio::fs::rename(path, new_path).await?;
+
+            Ok(image)
         })
         .await?
     });
